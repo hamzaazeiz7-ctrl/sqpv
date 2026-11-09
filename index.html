@@ -6162,7 +6162,10 @@ function ensureModals(){
 <div class="form-group"><label>Montant (DT)</label><input type="number" step="0.001" min="0.001" id="v20Amount" required></div>
 <div class="form-group full" id="v20CatWrap"><label>Catégorie</label><input id="v20Cat" list="v20CatList" placeholder="Ex. Loyer, Voiture courante…"><datalist id="v20CatList"></datalist></div>
 <div class="form-group" id="v20RepWrap"><label>Répétition</label><select id="v20Rep"><option value="0">Aucune (une seule fois)</option><option value="1">Tous les mois</option><option value="3">Tous les 3 mois</option><option value="12">Tous les ans</option></select></div>
-<div class="form-group" id="v20CountWrap"><label>Nombre d’échéances à créer</label><input type="number" id="v20Count" min="1" max="60" value="12"></div>
+<div class="form-group" id="v20CountWrap"><label>Nombre d’échéances (ex. 10, 12, 60)</label><input type="number" id="v20Count" min="1" max="120" value="12"></div>
+<div class="form-group full" id="v20ModeWrap"><label>Le montant saisi est…</label><select id="v20Mode"><option value="total">le montant total à étaler : l’app calcule le tableau d’amortissement</option><option value="each">le montant de chaque échéance</option></select></div>
+<div class="form-group" id="v20RateWrap"><label>Taux d’intérêt annuel % (facultatif)</label><input type="number" step="0.001" min="0" id="v20Rate" value="0"></div>
+<div class="form-group full" id="v20Preview"></div>
 <div class="form-group full"><label>Observation</label><textarea id="v20Note" rows="2"></textarea></div>
 <div class="form-group full"><button class="btn btn-primary" id="v20SaveBtn">Enregistrer l’échéance</button></div>
 </form></div></div>
@@ -6179,7 +6182,8 @@ function ensureModals(){
   while(box.firstChild)document.body.appendChild(box.firstChild);
   $('v20Kind').addEventListener('change',()=>{fillLinks();toggleKind()});
   $('v20Link').addEventListener('change',onLink);
-  $('v20Rep').addEventListener('change',()=>{$('v20CountWrap').style.display=$('v20Rep').value==='0'?'none':''});
+  ['v20Rep','v20Mode'].forEach(k=>$(k).addEventListener('change',()=>{toggleRep();preview()}));
+  ['v20Amount','v20Date','v20Count','v20Rate'].forEach(k=>$(k).addEventListener('input',preview));
   $('v20DueForm').addEventListener('submit',saveDue);
   $('v20PayForm').addEventListener('submit',savePay);
 }
@@ -6201,6 +6205,41 @@ function onLink(){
   if(!$('v20Title').value)$('v20Title').value=(k==='Dette'?'Remboursement ':'Encaissement ')+x.name;
   if(!$('v20Amount').value){const r=k==='Dette'?Math.max(0,Number(x.initial)-debtPaid(x)):Math.max(0,Number(x.amount)-recReceived(x));$('v20Amount').value=r.toFixed(3)}
 }
+const r3=x=>Math.round((Number(x)+Number.EPSILON)*1000)/1000;
+/* tableau d'amortissement : mode 'total' (montant à étaler, taux facultatif) ou 'each' (montant fixe par échéance) */
+function plan(o){
+  const n=Math.max(1,Math.min(120,Math.floor(Number(o.n))||1)),step=Number(o.step)||1,out=[];
+  const date=i=>i?addMonths(o.date,step*i):o.date;
+  if(o.mode==='each'){for(let i=0;i<n;i++)out.push({no:i+1,date:date(i),amount:r3(o.amount),capital:r3(o.amount),interest:0,balance:null});return out}
+  const P=r3(o.amount),rate=Number(o.rate)||0;
+  if(!(P>0))return out;
+  if(rate>0){
+    const r=rate/100*step/12,M=r3(P*r/(1-Math.pow(1+r,-n)));let bal=P;
+    for(let i=0;i<n;i++){const it=r3(bal*r),last=i===n-1,cap=last?bal:r3(M-it),amt=r3(cap+it);bal=r3(bal-cap);out.push({no:i+1,date:date(i),amount:amt,capital:cap,interest:it,balance:Math.max(0,bal)})}
+    return out;
+  }
+  const base=Math.floor(P/n*1000+1e-9)/1000;let bal=P;
+  for(let i=0;i<n;i++){const last=i===n-1,amt=last?r3(P-r3(base*(n-1))):r3(base);bal=r3(bal-amt);out.push({no:i+1,date:date(i),amount:amt,capital:amt,interest:0,balance:Math.max(0,bal)})}
+  return out;
+}
+function curPlan(){
+  const step=Number($('v20Rep').value);
+  return plan({amount:Number($('v20Amount').value),n:step?$('v20Count').value:1,step,date:$('v20Date').value||today(),mode:step?$('v20Mode').value:'each',rate:$('v20Rate').value});
+}
+function toggleRep(){
+  const rep=$('v20Rep').value!=='0',total=$('v20Mode').value==='total';
+  $('v20CountWrap').style.display=rep?'':'none';
+  $('v20ModeWrap').style.display=rep?'':'none';
+  $('v20RateWrap').style.display=rep&&total?'':'none';
+  $('v20Preview').style.display=rep?'':'none';
+}
+function preview(){
+  const box=$('v20Preview');if(!box||$('v20Rep').value==='0'||$('v20Id').value){if(box)box.innerHTML='';return}
+  const amt=Number($('v20Amount').value);
+  if(!(amt>0)){box.innerHTML='<div class="small">Saisissez le montant pour voir le tableau d’amortissement.</div>';return}
+  const pl=curPlan(),hasInt=pl.some(x=>x.interest>0),tot=pl.reduce((s,x)=>s+x.amount,0),totI=pl.reduce((s,x)=>s+x.interest,0);
+  box.innerHTML=`<div class="small" style="margin-bottom:6px"><b>Tableau d’amortissement</b> : ${pl.length} échéance(s), total ${fmt(tot)}${hasInt?' dont intérêts '+fmt(totI):''}</div><div style="max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:9px"><table style="min-width:0!important;width:100%"><thead><tr><th>N°</th><th>Date</th><th class="amount">Échéance</th>${hasInt?'<th class="amount">Capital</th><th class="amount">Intérêts</th>':''}${pl[0]&&pl[0].balance!==null?'<th class="amount">Reste dû</th>':''}</tr></thead><tbody>${pl.map(x=>`<tr><td>${x.no}</td><td>${x.date}</td><td class="amount">${fmt(x.amount)}</td>${hasInt?`<td class="amount">${fmt(x.capital)}</td><td class="amount">${fmt(x.interest)}</td>`:''}${x.balance!==null?`<td class="amount">${fmt(x.balance)}</td>`:''}</tr>`).join('')}</tbody></table></div>`;
+}
 function openDue(id,presetDate){
   ensureModals();
   const it=id?items().find(x=>x.id===id):null;
@@ -6217,9 +6256,9 @@ function openDue(id,presetDate){
   $('v20Amount').value=it?Number(it.amount).toFixed(3):'';
   $('v20Cat').value=it?(it.category||''):'';
   $('v20Note').value=it?(it.note||''):'';
-  $('v20Rep').value='0';$('v20Count').value=12;
+  $('v20Rep').value='0';$('v20Count').value=12;$('v20Mode').value='total';$('v20Rate').value=0;
   $('v20RepWrap').style.display=it?'none':'';
-  $('v20CountWrap').style.display='none';
+  toggleRep();preview();
   $('v20SaveBtn').textContent=it?'Enregistrer les modifications':'Enregistrer l’échéance';
   $('v20DueModal').classList.add('open');
 }
@@ -6233,8 +6272,9 @@ function saveDue(e){
     if(!(it.payments||[]).length){it.kind=kind;it.linkId=kind==='Dépense'?'':linkId}
     it.title=title;it.date=date;it.amount=amount;it.category=cat;it.note=note;
   }else{
-    const step=Number($('v20Rep').value),n=step?Math.max(1,Math.min(60,Number($('v20Count').value)||1)):1,series=n>1?uid():'';
-    for(let k=0;k<n;k++)items().push({id:uid(),kind,title,date:k?addMonths(date,step*k):date,amount,linkId:kind==='Dépense'?'':linkId,category:cat,note,seriesId:series,seriesNo:k+1,seriesTotal:n,payments:[],createdAt:new Date().toISOString()});
+    const pl=curPlan(),series=pl.length>1?uid():'';
+    if(!pl.length)return;
+    pl.forEach(x=>items().push({id:uid(),kind,title,date:x.date,amount:x.amount,capital:x.capital,interest:x.interest,linkId:kind==='Dépense'?'':linkId,category:cat,note,seriesId:series,seriesNo:x.no,seriesTotal:pl.length,payments:[],createdAt:new Date().toISOString()}));
   }
   closeModal('v20DueModal');save();
 }
@@ -6259,14 +6299,15 @@ function savePay(e){
   if(amount>rest+0.0005&&!confirm('Le montant dépasse le reste de '+fmt(rest)+'. Continuer ?'))return;
   const pid=uid(),p={id:pid,date,amount,mode,reason,note};
   const op={id:uid(),linkedDuePaymentId:pid,date,space:'Personnel',amount,mode,account:accOfMode(mode)};
+  const frac=it.interest>0&&it.amount>0?it.capital/it.amount:1; /* intérêts : seule la part capital réduit la dette/créance */
   if(it.kind==='Dette'){
     const d=(state.debts||[]).find(x=>x.id===it.linkId);
     op.type='Dépense';op.category='Remboursement dettes';op.sub=d?d.name:it.title;
-    if(d){const dp={id:uid(),date,amount,reason,mode,note};d.payments=d.payments||[];d.payments.push(dp);op.linkedPaymentId=dp.id;p.linkedPaymentId=dp.id}
+    if(d){const dp={id:uid(),date,amount:r3(amount*frac),reason,mode,note};d.payments=d.payments||[];d.payments.push(dp);op.linkedPaymentId=dp.id;p.linkedPaymentId=dp.id}
   }else if(it.kind==='Encaissement'){
     const r=(state.receivables||[]).find(x=>x.id===it.linkId);
     op.type='Recette';op.category='Autres revenus';op.sub=r?r.name:it.title;
-    if(r){const rp={id:uid(),date,amount,reason,mode,note};r.payments=r.payments||[];r.payments.push(rp);op.linkedPaymentId=rp.id;p.linkedPaymentId=rp.id}
+    if(r){const rp={id:uid(),date,amount:r3(amount*frac),reason,mode,note};r.payments=r.payments||[];r.payments.push(rp);op.linkedPaymentId=rp.id;p.linkedPaymentId=rp.id}
   }else{
     op.type='Dépense';op.category=it.category||'Dépenses personnelles';op.sub=it.title;
   }
@@ -6319,7 +6360,7 @@ function buildRows(filter,statusF,month){
     items().forEach(i=>{
       const paid=paidOf(i,set),rest=Math.max(0,Number(i.amount)-paid);
       const dates=(i.payments||[]).filter(p=>set.has(p.id)).map(p=>p.date).sort();
-      add({src:'due',i,date:i.date,label:`<strong>${esc(i.title)}</strong><br><span class="small">${esc(KINDS[i.kind]||i.kind)}${i.note?' · '+esc(i.note):''}</span>`,no:i.seriesTotal>1?i.seriesNo+'/'+i.seriesTotal:'-',amount:Number(i.amount),paid,rest,status:statusOf(i,set),dates,dir:i.kind==='Encaissement'?'in':'out'})});
+      add({src:'due',i,date:i.date,label:`<strong>${esc(i.title)}</strong><br><span class="small">${esc(KINDS[i.kind]||i.kind)}${i.interest>0?' · capital '+fmt(i.capital)+' · intérêts '+fmt(i.interest):''}${i.note?' · '+esc(i.note):''}</span>`,no:i.seriesTotal>1?i.seriesNo+'/'+i.seriesTotal:'-',amount:Number(i.amount),paid,rest,status:statusOf(i,set),dates,dir:i.kind==='Encaissement'?'in':'out'})});
   }
   if(filter===''||filter==='__other'){
     const linked=new Set(items().filter(x=>x.kind==='Dette'&&x.linkId&&restOf(x,set)>0.0005).map(x=>x.linkId));
@@ -6376,7 +6417,7 @@ if(typeof W.dashboardDue30V183==='function'){
 }
 
 /* ---------- API ---------- */
-W.V20={openDue,pay:openPay,hist:history,edit:openDue,del:delDue,delPay,go:goTo,items,restOf,paidOf,statusOf,addMonths};
+W.V20={plan,openDue,pay:openPay,hist:history,edit:openDue,del:delDue,delPay,go:goTo,items,restOf,paidOf,statusOf,addMonths};
 document.addEventListener('DOMContentLoaded',ensureModals);
 if(document.readyState!=='loading')ensureModals();
 try{if(typeof renderAll==='function')setTimeout(()=>{try{renderCal()}catch(e){}},0)}catch(e){}
