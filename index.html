@@ -5165,7 +5165,7 @@ function collect(maxDays,includeHidden){
     (state.dueItems||[]).forEach(x=>{const rest=W.v20DueRest?W.v20DueRest(x):0;if(rest>0.0005&&x.date)add(x.date,x.kind==='Encaissement'?'Encaissement attendu':x.kind==='Dette'?'Dette':'Échéance à payer',(x.kind==='Encaissement'?'À encaisser — ':'À payer — ')+x.title,x.note||'',rest,'calendar',x.id)});
     (state.debts||[]).forEach(d=>{const rest=Math.max(0,num(d.initial)-W.debtPaid(d));if(rest>0.0005&&d.dueDate)add(d.dueDate,'Dette','Dette — '+d.name,'Reste à rembourser',rest,'debts',d.id)});
     (state.receivables||[]).forEach(r=>{const rest=Math.max(0,num(r.amount)-W.recReceived(r));if(rest>0.0005&&r.date)add(r.date,'Encaissement attendu','À encaisser — '+r.name,r.nature||'',rest,'receivables',r.id)});
-    (state.personLedger||[]).forEach(x=>{const rest=W.personLedgerRemaining(x);if(rest>0.0005&&x.dueDate)add(x.dueDate,x.direction==='Donné'?'Prêt accordé':'Prêt reçu',(x.direction==='Donné'?'À récupérer auprès de ':'À rembourser à ')+x.person,x.nature||'',rest,'peopleledger',x.id)});
+    (state.personLedger||[]).forEach(x=>{if(x.schedule&&x.schedule.length&&W.v20LedgerSched){W.v20LedgerSched(x).forEach(q=>{if(q.rest>0.0005)add(q.dueDate,x.direction==='Donné'?'Prêt accordé':'Prêt reçu',(x.direction==='Donné'?'À récupérer auprès de ':'À rembourser à ')+x.person+' — échéance '+q.no+'/'+x.schedule.length,x.nature||'',q.rest,'peopleledger',x.id+'|'+q.id)});return}const rest=W.personLedgerRemaining(x);if(rest>0.0005&&x.dueDate)add(x.dueDate,x.direction==='Donné'?'Prêt accordé':'Prêt reçu',(x.direction==='Donné'?'À récupérer auprès de ':'À rembourser à ')+x.person,x.nature||'',rest,'peopleledger',x.id)});
     ((state.advanced&&state.advanced.annualProvisions)||[]).forEach(p=>{const rest=Math.max(0,num(p.annual)-num(p.reserved));if(p.dueDate)add(p.dueDate,'Dépense planifiée',p.name,rest>0?'Reste à provisionner : '+f0(rest):'Provision constituée',num(p.annual),'advanced',p.id)});
     (state.objectives||[]).forEach(o=>{if(!o.targetDate||!(num(o.target)>0))return;const cur=typeof W.objectiveRealized==='function'?W.objectiveRealized(o):num(o.current);if(cur<num(o.target))add(o.targetDate,'Objectif',o.name,'Réalisé '+f0(cur)+' sur '+f0(o.target),num(o.target)-cur,'objectives',o.id,{noLate:false})});
     (state.professionalTasks||[]).forEach(t=>{if(t.status!=='Terminé'&&t.dueDate)add(t.dueDate,'Dossier',t.name+(t.client?' — '+t.client:''),t.status+(t.priority?' · priorité '+t.priority:''),null,'professional',t.id)});
@@ -6208,7 +6208,7 @@ const r3=x=>Math.round((Number(x)+Number.EPSILON)*1000)/1000;
 /* tableau d'amortissement : mode 'total' (montant à étaler, taux facultatif) ou 'each' (montant fixe par échéance) */
 function plan(o){
   const n=Math.max(1,Math.min(120,Math.floor(Number(o.n))||1)),step=Number(o.step)||1,out=[];
-  const date=i=>i?addMonths(o.date,step*i):o.date;
+  const date=i=>i?(o.unit==='days'?addDaysISO(o.date,step*i):addMonths(o.date,step*i)):o.date;
   if(o.mode==='each'){for(let i=0;i<n;i++)out.push({no:i+1,date:date(i),amount:r3(o.amount),capital:r3(o.amount),interest:0,balance:null});return out}
   const P=r3(o.amount),rate=Number(o.rate)||0;
   if(!(P>0))return out;
@@ -6348,6 +6348,7 @@ function goTo(page){const b=document.querySelector('[data-page="'+page+'"]');if(
 
 /* ---------- échéanciers créés : un par série, sous le nom saisi ---------- */
 function serieKey(i){return i.seriesId||('t:'+i.title)}
+function loanList(){return (state.personLedger||[]).filter(x=>x.direction!=='Donné'&&x.schedule&&x.schedule.length).map(x=>({key:'p:'+x.id,label:x.person+' (prêt reçu · '+x.schedule.length+' échéances)'})).sort((a,b)=>a.label.localeCompare(b.label,'fr'))}
 function seriesList(){
   const m=new Map();
   items().forEach(i=>{const k=serieKey(i);if(!m.has(k))m.set(k,{key:k,title:i.title,n:0,first:i.date,last:i.date});const g=m.get(k);g.n++;if(i.date<g.first)g.first=i.date;if(i.date>g.last)g.last=i.date});
@@ -6376,9 +6377,15 @@ function buildRows(filter,statusF,month){
     const linked=new Set(items().filter(x=>x.kind==='Dette'&&x.linkId&&restOf(x,set)>0.0005).map(x=>x.linkId));
     (state.debts||[]).forEach(d=>{if(!d.dueDate||linked.has(d.id))return;const paid=debtPaid(d),rest=Math.max(0,Number(d.initial)-paid);
       add({src:'debt',d,date:d.dueDate,label:`<strong>${esc(d.name)}</strong><br><span class="small">Dette · échéance finale</span>`,no:'-',amount:Number(d.initial),paid,rest,status:st(rest,paid,d.dueDate),dates:(d.payments||[]).map(p=>p.date).sort(),dir:'out'})});
-    if(typeof personLedgerRemaining==='function')(state.personLedger||[]).forEach(x=>{if(!x.dueDate||x.direction==='Donné')return;const rest=personLedgerRemaining(x),paid=Math.max(0,Number(x.amount||0)-rest);
+    /* prêts reçus : sans tableau → une ligne à la date d'échéance (dans « Autres ») */
+    if(typeof personLedgerRemaining==='function'&&(filter===''||filter==='__other'))(state.personLedger||[]).forEach(x=>{if(x.direction==='Donné'||(x.schedule&&x.schedule.length))return;if(!x.dueDate)return;const rest=personLedgerRemaining(x),paid=Math.max(0,Number(x.amount||0)-rest);
       add({src:'pers',x,date:x.dueDate,label:`<strong>${esc(x.person||x.name||'Personne')}</strong><br><span class="small">Prêt reçu · à rendre</span>`,no:'-',amount:Number(x.amount||0),paid,rest,status:st(rest,paid,x.dueDate),dates:[],dir:'out'})});
   }
+  /* prêts reçus avec tableau d'amortissement : une ligne par échéance, sous le nom de la personne */
+    if(filter===''||filter.indexOf('__p:')===0)(state.personLedger||[]).forEach(x=>{
+      if(x.direction==='Donné'||!(x.schedule&&x.schedule.length))return;
+      if(filter.indexOf('__p:')===0&&x.id!==filter.slice(4))return;
+      schedRows(x).forEach(r=>add({src:'sched',x,sid:r.id,date:r.dueDate,label:`<strong>${esc(x.person)}</strong><br><span class="small">Prêt reçu · tableau d’amortissement</span>`,no:r.no+'/'+x.schedule.length,amount:r.amount,paid:r.paid,rest:r.rest,status:r.status,dates:[],dir:'out'}))});
   rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   return rows;
 }
@@ -6388,6 +6395,7 @@ function rowActions(r){
   if(r.src==='due'){const id=esc(r.i.id);return `<button class="btn btn-primary btn-sm" onclick="V20.pay('${id}')"${dis}>${r.i.kind==='Encaissement'?'Encaisser':'Payer'}</button><button class="btn btn-light btn-sm" onclick="V20.hist('${id}')">Historique</button><button class="btn btn-light btn-sm" onclick="V20.edit('${id}')">Modifier</button><button class="btn btn-light btn-sm" onclick="V20.del('${id}')">Supprimer</button>`}
   if(r.src==='debt')return `<button class="btn btn-primary btn-sm" onclick="openMovement('debt','${esc(r.d.id)}')"${dis}>Payer</button><button class="btn btn-light btn-sm" onclick="V20.go('debts')">Ouvrir</button>`;
   if(r.src==='rec')return `<button class="btn btn-primary btn-sm" onclick="openMovement('receivable','${esc(r.r.id)}')"${dis}>Encaisser</button><button class="btn btn-light btn-sm" onclick="V20.go('receivables')">Ouvrir</button>`;
+  if(r.src==='sched')return `<button class="btn btn-primary btn-sm" onclick="openPersonPayment('${esc(r.x.id)}')"${dis}>Rembourser</button><button class="btn btn-light btn-sm" onclick="V20.sched('${esc(r.x.id)}')">Amortissement</button>`;
   return `<button class="btn btn-light btn-sm" onclick="V20.go('peopleledger')">Ouvrir</button>`;
 }
 const origRender=W.renderCreditCalendar;
@@ -6397,10 +6405,10 @@ function renderCal(){
      Si elle n'a pas été reconstruite, la valeur actuelle (par ex. après « Effacer les filtres ») fait foi. */
   const mine=sel.querySelector('optgroup[data-v20]');
   let cur=mine?sel.value:(W.__v20CalSel!==undefined?W.__v20CalSel:sel.value);
-  const series=seriesList();
+  const series=seriesList(),loans=loanList();
   sel.innerHTML='<option value="">Toutes les échéances</option>'
     +((state.credits||[]).length?'<optgroup label="Crédits">'+state.credits.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')+'</optgroup>':'')
-    +'<optgroup label="Mes échéanciers" data-v20="1">'+(series.length?'<option value="__due">Tous mes échéanciers</option>':'')+series.map(x=>`<option value="__s:${esc(x.key)}">${esc(x.label)}</option>`).join('')+(series.length?'':'<option value="__due" disabled>(aucun pour le moment)</option>')+'</optgroup>'
+    +'<optgroup label="Mes échéanciers" data-v20="1">'+(series.length?'<option value="__due">Tous mes échéanciers</option>':'')+series.map(x=>`<option value="__s:${esc(x.key)}">${esc(x.label)}</option>`).join('')+loans.map(x=>`<option value="__${esc(x.key)}">${esc(x.label)}</option>`).join('')+((series.length||loans.length)?'':'<option value="__due" disabled>(aucun pour le moment)</option>')+'</optgroup>'
     +'<optgroup label="Autres">'+'<option value="__other">Autres dettes datées (dettes, prêts reçus)</option></optgroup>';
   sel.value=[...sel.options].some(o=>o.value===cur&&!o.disabled)?cur:'';
   W.__v20CalSel=sel.value;
@@ -6417,21 +6425,120 @@ function renderCal(){
 }
 W.renderCreditCalendar=renderCal;
 
-/* ---------- tableau de bord : échéances des 30 jours ---------- */
-if(typeof W.dashboardDue30V183==='function'){
-  const o=W.dashboardDue30V183;
-  W.dashboardDue30V183=function(){
-    let t=o.apply(this,arguments);
-    try{const a=today(),b=addDaysISO(a,30),set=opSet();items().forEach(i=>{if(i.kind!=='Encaissement'&&i.date>=a&&i.date<=b)t+=restOf(i,set)})}catch(e){}
-    return t;
-  };
-}
-
 /* ---------- API ---------- */
 W.V20={plan,openDue,pay:openPay,hist:history,edit:openDue,del:delDue,delPay,go:goTo,items,restOf,paidOf,statusOf,addMonths};
 document.addEventListener('DOMContentLoaded',ensureModals);
 if(document.readyState!=='loading')ensureModals();
 try{if(typeof renderAll==='function')setTimeout(()=>{try{renderCal()}catch(e){}},0)}catch(e){}
+
+
+/* ====================================================================
+   PRÊTS ET AVANCES : tableau d'amortissement
+   ==================================================================== */
+const STEP={Mensuelle:[1,'m'],Trimestrielle:[3,'m'],Hebdomadaire:[7,'days'],Ponctuelle:[1,'m']};
+function schedRows(x){
+  const sch=(x.schedule||[]).slice().sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate)));
+  let pool=typeof personLedgerPaid==='function'?personLedgerPaid(x):0;const t=today();
+  return sch.map((q,i)=>{const amt=Number(q.amount||0),paid=Math.min(amt,Math.max(0,pool));pool=Math.max(0,pool-paid);const rest=r3(amt-paid);
+    return {id:q.id,no:i+1,dueDate:q.dueDate,amount:amt,paid:r3(paid),rest,status:rest<=0.0005?'Payée':paid>0?(q.dueDate<t?'En retard':'Partielle'):(q.dueDate<t?'En retard':'À venir')}});
+}
+W.v20LedgerSched=schedRows;
+function ledgerPlan(){
+  const cnt=Math.floor(Number($('plSchedCount').value)||0),amount=Number($('plAmount').value);
+  if(!(cnt>0)||!(amount>0))return [];
+  const st=STEP[$('plFrequency').value]||STEP.Mensuelle,first=$('plSchedFirst').value||addMonths($('plDate').value||today(),1);
+  return plan({amount,n:cnt,step:st[0],unit:st[1]==='days'?'days':'m',date:first,mode:'total',rate:0});
+}
+function ledgerPreview(){
+  const box=$('plSchedPreview');if(!box)return;
+  const pl=ledgerPlan();
+  if(!pl.length){box.innerHTML='';return}
+  box.innerHTML=`<div class="small" style="margin-bottom:6px"><b>Tableau d’amortissement</b> : ${pl.length} échéance(s), total ${fmt(pl.reduce((s,x)=>s+x.amount,0))}</div><div style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:9px"><table style="min-width:0!important;width:100%"><thead><tr><th>N°</th><th>Date</th><th class="amount">Échéance</th><th class="amount">Reste dû</th></tr></thead><tbody>${pl.map(x=>`<tr><td>${x.no}</td><td>${x.date}</td><td class="amount">${fmt(x.amount)}</td><td class="amount">${fmt(x.balance)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function ensureLedgerForm(){
+  const grid=document.querySelector('#personLedgerForm .form-grid');if(!grid||$('plSchedCount'))return;
+  const anchor=[...grid.children].find(e=>e.tagName==='LABEL'&&/Observation/.test(e.textContent));
+  const frag=document.createElement('div');frag.style.display='contents';
+  frag.innerHTML=`<label>Tableau d’amortissement : nombre d’échéances<input type="number" id="plSchedCount" min="0" max="120" placeholder="0 = pas de tableau"></label><label>Date de la 1re échéance<input type="date" id="plSchedFirst"></label><div class="small" style="grid-column:1/-1;margin-top:-4px">Le montant initial est réparti à parts égales, selon la fréquence choisie ci-dessus (mensuelle, trimestrielle ou hebdomadaire).</div><div id="plSchedPreview" style="grid-column:1/-1"></div>`;
+  grid.insertBefore(frag,anchor||null);
+  ['plSchedCount','plSchedFirst','plAmount','plFrequency','plDate'].forEach(k=>$(k).addEventListener('input',ledgerPreview));
+  $('plFrequency').addEventListener('change',ledgerPreview);
+  const f=$('personLedgerForm');
+  f.addEventListener('submit',()=>{W.__v20pl={id:$('plId').value,n:state.personLedger.length}},true);
+  f.addEventListener('submit',()=>{
+    const m=W.__v20pl;W.__v20pl=null;if(!m)return;
+    if($('personLedgerModal').classList.contains('open'))return;   /* enregistrement refusé : on ne touche à rien */
+    const x=m.id?state.personLedger.find(v=>v.id===m.id):state.personLedger[state.personLedger.length-1];
+    if(!x||(!m.id&&state.personLedger.length!==m.n+1))return;
+    const pl=ledgerPlan();
+    if(pl.length){x.schedule=pl.map(q=>({id:uid(),dueDate:q.date,amount:q.amount}));x.installment=pl[0].amount;x.dueDate=pl[pl.length-1].date}
+    else if(!(Number($('plSchedCount').value)>0)&&x.schedule)delete x.schedule;
+    save();
+  },false);
+}
+const origOpenLedger=W.openPersonLedger;
+W.openPersonLedger=function(id){
+  ensureLedgerForm();
+  const r=origOpenLedger.apply(this,arguments);
+  const x=id?(state.personLedger||[]).find(v=>v.id===id):null;
+  $('plSchedCount').value=x&&x.schedule?x.schedule.length:'';
+  $('plSchedFirst').value=x&&x.schedule&&x.schedule[0]?x.schedule.slice().sort((a,b)=>a.dueDate.localeCompare(b.dueDate))[0].dueDate:'';
+  ledgerPreview();
+  return r;
+};
+const origPay=W.openPersonPayment;
+W.openPersonPayment=function(id){
+  const r=origPay.apply(this,arguments);
+  const x=(state.personLedger||[]).find(v=>v.id===id);
+  if(x&&x.schedule&&x.schedule.length){
+    const nx=schedRows(x).find(q=>q.rest>0.0005);
+    if(nx){$('ppAmount').value=Math.min(nx.rest,personLedgerRemaining(x)).toFixed(3);$('ppReason').value='Échéance '+nx.no+'/'+x.schedule.length+' — '+(x.direction==='Reçu'?'remboursement à ':'remboursement reçu de ')+x.person}
+  }
+  return r;
+};
+function showSched(id){
+  const x=(state.personLedger||[]).find(v=>v.id===id);if(!x)return;
+  const rows=schedRows(x),tot=rows.reduce((s,r)=>s+r.amount,0),paid=rows.reduce((s,r)=>s+r.paid,0);
+  $('historyTitle').textContent='Tableau d’amortissement — '+x.person+(x.direction==='Reçu'?' (prêt reçu)':' (prêt accordé)');
+  $('historyContent').innerHTML=`<div class="small" style="margin-bottom:8px">Montant initial ${fmt(x.amount)} · ${rows.length} échéances · réglé ${fmt(paid)} · reste ${fmt(Math.max(0,tot-paid))}. Les règlements sont imputés dans l’ordre des échéances.</div>
+<div style="overflow:auto"><table style="min-width:0!important;width:100%"><thead><tr><th>N°</th><th>Date</th><th class="amount">Échéance</th><th class="amount">Payé</th><th class="amount">Reste</th><th>Statut</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.no}</td><td>${r.dueDate}</td><td class="amount">${fmt(r.amount)}</td><td class="amount">${fmt(r.paid)}</td><td class="amount">${fmt(r.rest)}</td><td><span class="badge ${r.status==='Payée'?'ok':r.status==='En retard'?'danger':'warn'}">${x.direction==='Donné'&&r.status==='Payée'?'Encaissée':r.status}</span></td></tr>`).join('')}</tbody></table></div>
+<div class="action-group no-print" style="margin-top:10px"><button class="btn btn-primary" onclick="closeModal('historyModal');openPersonPayment('${esc(id)}')"${paid>=tot-0.0005?' disabled':''}>${x.direction==='Reçu'?'Rembourser l’échéance suivante':'Encaisser l’échéance suivante'}</button><button class="btn btn-light" onclick="closeModal('historyModal');openPersonLedger('${esc(id)}')">Modifier le tableau</button></div>`;
+  $('historyModal').classList.add('open');
+}
+/* page Prêts et avances : bouton + résumé de l'échéancier */
+function decorateLedger(){
+  const body=$('peopleLedgerBody');if(!body)return;
+  body.querySelectorAll('tr').forEach(tr=>{
+    const m=/openPersonPayment\('([^']+)'\)/.exec(tr.innerHTML);if(!m)return;
+    const x=(state.personLedger||[]).find(v=>v.id===m[1]);if(!x||!x.schedule||!x.schedule.length||tr.querySelector('.v20-amort'))return;
+    const rows=schedRows(x),done=rows.filter(r=>r.rest<=0.0005).length;
+    const grp=tr.querySelector('.action-group');
+    if(grp)grp.insertAdjacentHTML('afterbegin',`<button class="btn btn-light btn-sm v20-amort" onclick="V20.sched('${esc(x.id)}')">Amortissement</button>`);
+    const first=tr.querySelector('td');if(first)first.insertAdjacentHTML('beforeend',`<div class="small">Échéancier : ${done}/${rows.length} réglées</div>`);
+  });
+}
+const origRenderLedger=W.renderPeopleLedger;
+if(typeof origRenderLedger==='function')W.renderPeopleLedger=function(){const r=origRenderLedger.apply(this,arguments);try{decorateLedger()}catch(e){console.error(e)}return r};
+/* statut : en retard dès qu'une échéance du tableau est dépassée */
+const origStatus=W.personLedgerStatus;
+if(typeof origStatus==='function')W.personLedgerStatus=function(x){
+  if(x&&x.schedule&&x.schedule.length){if(personLedgerRemaining(x)<=0.0005)return 'Soldé';return schedRows(x).some(r=>r.status==='En retard')?'En retard':'En cours'}
+  return origStatus.apply(this,arguments);
+};
+/* échéances des 30 prochains jours : uniquement ce qui reste à payer */
+W.dashboardDue30V183=function(){
+  const a=today(),b=addDaysISO(a,30),within=d=>!!d&&d>=a&&d<=b;let t=0;
+  (state.credits||[]).forEach(c=>(c.schedule||[]).forEach(i=>{if(within(i.dueDate))t+=Math.max(0,Number(i.amount||0)-installmentPaid(i))}));
+  const set=opSet();items().forEach(i=>{if(i.kind!=='Encaissement'&&within(i.date))t+=restOf(i,set)});
+  (state.debts||[]).forEach(d=>{if(within(d.dueDate))t+=Math.max(0,Number(d.initial||0)-debtPaid(d))});
+  (state.personLedger||[]).forEach(x=>{if(x.direction==='Donné')return;
+    if(x.schedule&&x.schedule.length)schedRows(x).forEach(r=>{if(within(r.dueDate))t+=r.rest});
+    else if(within(x.dueDate))t+=personLedgerRemaining(x)});
+  return t;
+};
+W.V20.sched=showSched;W.V20.schedRows=schedRows;
+document.addEventListener('DOMContentLoaded',ensureLedgerForm);
+if(document.readyState!=='loading')ensureLedgerForm();
 
 /* ====================================================================
    AFFICHAGE MOBILE (≤ 820 px) : barre basse, menu « Plus », cartes
@@ -6460,6 +6567,9 @@ css.textContent=`
   .modal{padding:0;align-items:flex-end}
   .modal-box{width:100%!important;max-width:100%!important;max-height:92vh;border-radius:18px 18px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom))}
   .form-grid{grid-template-columns:1fr!important}.form-group.full{grid-column:auto}
+  .modal form label{display:block;font-size:13px;color:#475569}
+  .modal form label input:not([type=checkbox]):not([type=radio]),.modal form label select,.modal form label textarea{display:block;width:100%;margin-top:5px;padding:10px;border:1px solid var(--border);border-radius:8px;background:#fff;font-family:inherit;color:var(--text)}
+  .modal form .form-grid{gap:12px}
   #v193pill{bottom:auto!important;top:9px!important;right:10px!important;z-index:7!important}
   .v20c{min-width:0!important;display:block;border:0;font-size:14px}
   .v20c thead{display:none}
