@@ -6344,9 +6344,14 @@ function rowActions(r){
 const origRender=W.renderCreditCalendar;
 function renderCal(){
   const sel=$('calendarCredit');if(!sel)return origRender&&origRender();
-  if(![...sel.options].some(o=>o.value==='__due'))sel.insertAdjacentHTML('beforeend','<option value="__due">Échéances que j’ai créées</option><option value="__other">Dettes, créances et prêts datés</option>');
-  if(W.__v20CalSel!==undefined&&sel.value!==W.__v20CalSel&&[...sel.options].some(o=>o.value===W.__v20CalSel))sel.value=W.__v20CalSel;
-  if(!sel.__v20){sel.__v20=1;sel.addEventListener('change',()=>{W.__v20CalSel=sel.value})}
+  /* la liste est reconstruite par l'app à chaque rafraîchissement : on remet alors le filtre choisi.
+     Si elle n'a pas été reconstruite, la valeur actuelle (par ex. après « Effacer les filtres ») fait foi. */
+  const rebuilt=![...sel.options].some(o=>o.value==='__due');
+  if(rebuilt){
+    sel.insertAdjacentHTML('beforeend','<option value="__due">Échéances que j’ai créées</option><option value="__other">Dettes, créances et prêts datés</option>');
+    if(W.__v20CalSel&&[...sel.options].some(o=>o.value===W.__v20CalSel))sel.value=W.__v20CalSel;
+  }
+  W.__v20CalSel=sel.value;
   const rows=buildRows(sel.value,$('calendarStatus').value,$('calendarMonth').value);
   const out=rows.filter(r=>r.dir==='out'),inn=rows.filter(r=>r.dir==='in');
   const sum=(a,k)=>a.reduce((s,r)=>s+r[k],0);
