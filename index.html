@@ -355,7 +355,7 @@ button.v19-due{box-shadow:0 0 0 2px #f59e0b}
 
   <section id="calendar" class="page hidden">
     <div class="card">
-      <div class="section-title"><div><h2>Calendrier financier</h2><p class="small">Toutes vos échéances au même endroit : crédits, échéances créées ici, dettes, créances et prêts datés. Créez une échéance avec « + Nouvelle échéance », puis payez-la directement.</p></div><div class="action-group no-print"><button class="btn btn-primary" onclick="V20.openDue()">+ Nouvelle échéance</button><button class="btn btn-light" onclick="showFullCalendar()">Voir calendrier complet</button><button class="btn btn-light" onclick="showCurrentMonthCalendar()">Mois en cours</button></div></div>
+      <div class="section-title"><div><h2>Calendrier financier</h2><p class="small">Tout ce que vous devez payer : crédits, dettes et échéanciers que vous créez. Avec « + Nouvelle échéance », saisissez le montant total de la dette, la date de la première échéance et le nombre d’échéances : l’app établit le tableau d’amortissement.</p></div><div class="action-group no-print"><button class="btn btn-primary" onclick="V20.openDue()">+ Nouvelle échéance</button><button class="btn btn-light" onclick="showFullCalendar()">Voir calendrier complet</button><button class="btn btn-light" onclick="showCurrentMonthCalendar()">Mois en cours</button></div></div>
       <div class="filters"><select id="calendarCredit" onchange="renderCreditCalendar()"></select><select id="calendarStatus" onchange="renderCreditCalendar()"><option value="">Tous les statuts</option><option value="En retard">En retard</option><option value="À venir">À venir</option><option value="Partielle">Partielle</option><option value="Payée">Payée</option></select><input type="month" id="calendarMonth" onchange="renderCreditCalendar()"><button class="btn btn-light" onclick="clearCalendarFilters()">Effacer les filtres</button><span id="calendarPeriod" class="badge ok"></span></div>
       <div id="calendarTotals" class="grid kpis" style="margin:14px 0"></div>
       <div style="overflow-x:auto"><table><thead><tr><th>Échéance</th><th>N°</th><th>Date d’échéance</th><th class="amount">Montant prévu</th><th>Date(s) de paiement</th><th class="amount">Montant payé</th><th class="amount">Impayé / reste</th><th>Statut</th><th>Actions</th></tr></thead><tbody id="calendarBody"></tbody></table></div>
@@ -6155,16 +6155,15 @@ function ensureModals(){
 <div class="modal" id="v20DueModal"><div class="modal-box"><div class="modal-head"><h2 id="v20DueTitle">Nouvelle échéance</h2><button class="close" type="button" onclick="closeModal('v20DueModal')">×</button></div>
 <form id="v20DueForm" class="form-grid">
 <input type="hidden" id="v20Id">
-<div class="form-group full"><label>Type d’échéance</label><select id="v20Kind"><option value="Dépense">${KINDS.Dépense} (loyer, facture, abonnement…)</option><option value="Dette">${KINDS.Dette}</option><option value="Encaissement">${KINDS.Encaissement}</option></select></div>
+<div class="form-group full"><label>Type d’échéance</label><select id="v20Kind"><option value="Dépense">${KINDS.Dépense} (loyer, facture, abonnement…)</option><option value="Dette">${KINDS.Dette}</option></select></div>
 <div class="form-group full" id="v20LinkWrap"><label id="v20LinkLabel">Dette concernée</label><select id="v20Link"></select></div>
 <div class="form-group full"><label>Libellé</label><input id="v20Title" required placeholder="Ex. Loyer, STEG, remboursement…"></div>
 <div class="form-group"><label>Date d’échéance</label><input type="date" id="v20Date" required></div>
-<div class="form-group"><label>Montant (DT)</label><input type="number" step="0.001" min="0.001" id="v20Amount" required></div>
+<div class="form-group"><label id="v20AmountLabel">Montant (DT)</label><input type="number" step="0.001" min="0.001" id="v20Amount" required></div>
 <div class="form-group full" id="v20CatWrap"><label>Catégorie</label><input id="v20Cat" list="v20CatList" placeholder="Ex. Loyer, Voiture courante…"><datalist id="v20CatList"></datalist></div>
 <div class="form-group" id="v20RepWrap"><label>Répétition</label><select id="v20Rep"><option value="0">Aucune (une seule fois)</option><option value="1">Tous les mois</option><option value="3">Tous les 3 mois</option><option value="12">Tous les ans</option></select></div>
 <div class="form-group" id="v20CountWrap"><label>Nombre d’échéances (ex. 10, 12, 60)</label><input type="number" id="v20Count" min="1" max="120" value="12"></div>
-<div class="form-group full" id="v20ModeWrap"><label>Le montant saisi est…</label><select id="v20Mode"><option value="total">le montant total à étaler : l’app calcule le tableau d’amortissement</option><option value="each">le montant de chaque échéance</option></select></div>
-<div class="form-group" id="v20RateWrap"><label>Taux d’intérêt annuel % (facultatif)</label><input type="number" step="0.001" min="0" id="v20Rate" value="0"></div>
+<div class="form-group" id="v20RateWrap"><label>Taux d’intérêt annuel % (facultatif, 0 = sans intérêt)</label><input type="number" step="0.001" min="0" id="v20Rate" value="0"></div>
 <div class="form-group full" id="v20Preview"></div>
 <div class="form-group full"><label>Observation</label><textarea id="v20Note" rows="2"></textarea></div>
 <div class="form-group full"><button class="btn btn-primary" id="v20SaveBtn">Enregistrer l’échéance</button></div>
@@ -6182,7 +6181,7 @@ function ensureModals(){
   while(box.firstChild)document.body.appendChild(box.firstChild);
   $('v20Kind').addEventListener('change',()=>{fillLinks();toggleKind()});
   $('v20Link').addEventListener('change',onLink);
-  ['v20Rep','v20Mode'].forEach(k=>$(k).addEventListener('change',()=>{toggleRep();preview()}));
+  $('v20Rep').addEventListener('change',()=>{toggleRep();preview()});
   ['v20Amount','v20Date','v20Count','v20Rate'].forEach(k=>$(k).addEventListener('input',preview));
   $('v20DueForm').addEventListener('submit',saveDue);
   $('v20PayForm').addEventListener('submit',savePay);
@@ -6224,14 +6223,14 @@ function plan(o){
 }
 function curPlan(){
   const step=Number($('v20Rep').value);
-  return plan({amount:Number($('v20Amount').value),n:step?$('v20Count').value:1,step,date:$('v20Date').value||today(),mode:step?$('v20Mode').value:'each',rate:$('v20Rate').value});
+  return plan({amount:Number($('v20Amount').value),n:step?$('v20Count').value:1,step,date:$('v20Date').value||today(),mode:'total',rate:step?$('v20Rate').value:0});
 }
 function toggleRep(){
-  const rep=$('v20Rep').value!=='0',total=$('v20Mode').value==='total';
+  const rep=$('v20Rep').value!=='0',edit=!!$('v20Id').value;
   $('v20CountWrap').style.display=rep?'':'none';
-  $('v20ModeWrap').style.display=rep?'':'none';
-  $('v20RateWrap').style.display=rep&&total?'':'none';
+  $('v20RateWrap').style.display=rep?'':'none';
   $('v20Preview').style.display=rep?'':'none';
+  $('v20AmountLabel').textContent=rep&&!edit?'Montant total à rembourser (DT) — réparti sur les échéances':'Montant de l’échéance (DT)';
 }
 function preview(){
   const box=$('v20Preview');if(!box||$('v20Rep').value==='0'||$('v20Id').value){if(box)box.innerHTML='';return}
@@ -6247,6 +6246,7 @@ function openDue(id,presetDate){
   $('v20CatList').innerHTML=(typeof allCats==='function'?allCats():[]).map(c=>`<option value="${esc(c)}">`).join('');
   $('v20Id').value=it?it.id:'';
   $('v20DueTitle').textContent=it?'Modifier l’échéance':'Nouvelle échéance';
+  if(it&&it.kind==='Encaissement'&&![...$('v20Kind').options].some(o=>o.value==='Encaissement'))$('v20Kind').insertAdjacentHTML('beforeend','<option value="Encaissement">'+KINDS.Encaissement+'</option>');
   $('v20Kind').value=it?it.kind:'Dépense';
   fillLinks(it&&it.linkId);toggleKind();
   const hasPay=it&&(it.payments||[]).length;
@@ -6256,7 +6256,7 @@ function openDue(id,presetDate){
   $('v20Amount').value=it?Number(it.amount).toFixed(3):'';
   $('v20Cat').value=it?(it.category||''):'';
   $('v20Note').value=it?(it.note||''):'';
-  $('v20Rep').value='0';$('v20Count').value=12;$('v20Mode').value='total';$('v20Rate').value=0;
+  $('v20Rep').value='0';$('v20Count').value=12;$('v20Rate').value=0;
   $('v20RepWrap').style.display=it?'none':'';
   toggleRep();preview();
   $('v20SaveBtn').textContent=it?'Enregistrer les modifications':'Enregistrer l’échéance';
@@ -6272,7 +6272,7 @@ function saveDue(e){
     if(!(it.payments||[]).length){it.kind=kind;it.linkId=kind==='Dépense'?'':linkId}
     it.title=title;it.date=date;it.amount=amount;it.category=cat;it.note=note;
   }else{
-    const pl=curPlan(),series=pl.length>1?uid():'';
+    const pl=curPlan(),series=uid();
     if(!pl.length)return;
     pl.forEach(x=>items().push({id:uid(),kind,title,date:x.date,amount:x.amount,capital:x.capital,interest:x.interest,linkId:kind==='Dépense'?'':linkId,category:cat,note,seriesId:series,seriesNo:x.no,seriesTotal:pl.length,payments:[],createdAt:new Date().toISOString()}));
   }
@@ -6346,18 +6346,28 @@ function delDue(id){
 }
 function goTo(page){const b=document.querySelector('[data-page="'+page+'"]');if(b)b.click()}
 
+/* ---------- échéanciers créés : un par série, sous le nom saisi ---------- */
+function serieKey(i){return i.seriesId||('t:'+i.title)}
+function seriesList(){
+  const m=new Map();
+  items().forEach(i=>{const k=serieKey(i);if(!m.has(k))m.set(k,{key:k,title:i.title,n:0,first:i.date,last:i.date});const g=m.get(k);g.n++;if(i.date<g.first)g.first=i.date;if(i.date>g.last)g.last=i.date});
+  const arr=[...m.values()],cnt={};arr.forEach(g=>cnt[g.title]=(cnt[g.title]||0)+1);
+  arr.forEach(g=>{g.label=g.title+(g.n>1?' ('+g.n+' échéances)':'')+(cnt[g.title]>1?' · '+g.first:'')});
+  return arr.sort((a,b)=>a.title.localeCompare(b.title,'fr'));
+}
 /* ---------- calendrier : lignes ---------- */
 function buildRows(filter,statusF,month){
   const set=opSet(),rows=[],t=today();
   const add=r=>{if(statusF&&r.status!==statusF)return;if(month&&String(r.date).slice(0,7)!==month)return;rows.push(r)};
   const st=(rest,paid,date)=>rest<=0.0005?'Payée':paid>0?'Partielle':(date<t?'En retard':'À venir');
-  if(filter===''||(filter!=='__due'&&filter!=='__other')){
+  if(filter===''||(filter.indexOf('__')!==0)){
     (state.credits||[]).filter(c=>!filter||c.id===filter).forEach(c=>(c.schedule||[]).forEach((i,k)=>{
       const paid=installmentPaid(i),rest=Math.max(0,Number(i.amount)-paid);
       add({src:'credit',c,i,date:i.dueDate,label:esc(c.name),no:String(k+1),amount:Number(i.amount),paid,rest,status:installmentStatus(i),dates:installmentPaymentDates(i),dir:'out'})}));
   }
-  if(filter===''||filter==='__due'){
+  if(filter===''||filter==='__due'||filter.indexOf('__s:')===0){
     items().forEach(i=>{
+      if(filter.indexOf('__s:')===0&&serieKey(i)!==filter.slice(4))return;
       const paid=paidOf(i,set),rest=Math.max(0,Number(i.amount)-paid);
       const dates=(i.payments||[]).filter(p=>set.has(p.id)).map(p=>p.date).sort();
       add({src:'due',i,date:i.date,label:`<strong>${esc(i.title)}</strong><br><span class="small">${esc(KINDS[i.kind]||i.kind)}${i.interest>0?' · capital '+fmt(i.capital)+' · intérêts '+fmt(i.interest):''}${i.note?' · '+esc(i.note):''}</span>`,no:i.seriesTotal>1?i.seriesNo+'/'+i.seriesTotal:'-',amount:Number(i.amount),paid,rest,status:statusOf(i,set),dates,dir:i.kind==='Encaissement'?'in':'out'})});
@@ -6366,10 +6376,8 @@ function buildRows(filter,statusF,month){
     const linked=new Set(items().filter(x=>x.kind==='Dette'&&x.linkId&&restOf(x,set)>0.0005).map(x=>x.linkId));
     (state.debts||[]).forEach(d=>{if(!d.dueDate||linked.has(d.id))return;const paid=debtPaid(d),rest=Math.max(0,Number(d.initial)-paid);
       add({src:'debt',d,date:d.dueDate,label:`<strong>${esc(d.name)}</strong><br><span class="small">Dette · échéance finale</span>`,no:'-',amount:Number(d.initial),paid,rest,status:st(rest,paid,d.dueDate),dates:(d.payments||[]).map(p=>p.date).sort(),dir:'out'})});
-    (state.receivables||[]).forEach(r=>{if(!r.date)return;const paid=recReceived(r),rest=Math.max(0,Number(r.amount)-paid);
-      add({src:'rec',r,date:r.date,label:`<strong>${esc(r.name)}</strong><br><span class="small">À encaisser${r.nature?' · '+esc(r.nature):''}</span>`,no:'-',amount:Number(r.amount),paid,rest,status:st(rest,paid,r.date),dates:(r.payments||[]).map(p=>p.date).sort(),dir:'in'})});
-    if(typeof personLedgerRemaining==='function')(state.personLedger||[]).forEach(x=>{if(!x.dueDate)return;const rest=personLedgerRemaining(x),paid=Math.max(0,Number(x.amount||0)-rest);
-      add({src:'pers',x,date:x.dueDate,label:`<strong>${esc(x.person||x.name||'Personne')}</strong><br><span class="small">${x.direction==='Donné'?'Prêt accordé · à récupérer':'Prêt reçu · à rendre'}</span>`,no:'-',amount:Number(x.amount||0),paid,rest,status:st(rest,paid,x.dueDate),dates:[],dir:x.direction==='Donné'?'in':'out'})});
+    if(typeof personLedgerRemaining==='function')(state.personLedger||[]).forEach(x=>{if(!x.dueDate||x.direction==='Donné')return;const rest=personLedgerRemaining(x),paid=Math.max(0,Number(x.amount||0)-rest);
+      add({src:'pers',x,date:x.dueDate,label:`<strong>${esc(x.person||x.name||'Personne')}</strong><br><span class="small">Prêt reçu · à rendre</span>`,no:'-',amount:Number(x.amount||0),paid,rest,status:st(rest,paid,x.dueDate),dates:[],dir:'out'})});
   }
   rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   return rows;
@@ -6387,11 +6395,14 @@ function renderCal(){
   const sel=$('calendarCredit');if(!sel)return origRender&&origRender();
   /* la liste est reconstruite par l'app à chaque rafraîchissement : on remet alors le filtre choisi.
      Si elle n'a pas été reconstruite, la valeur actuelle (par ex. après « Effacer les filtres ») fait foi. */
-  const rebuilt=![...sel.options].some(o=>o.value==='__due');
-  if(rebuilt){
-    sel.insertAdjacentHTML('beforeend','<option value="__due">Échéances que j’ai créées</option><option value="__other">Dettes, créances et prêts datés</option>');
-    if(W.__v20CalSel&&[...sel.options].some(o=>o.value===W.__v20CalSel))sel.value=W.__v20CalSel;
-  }
+  const mine=sel.querySelector('optgroup[data-v20]');
+  let cur=mine?sel.value:(W.__v20CalSel!==undefined?W.__v20CalSel:sel.value);
+  const series=seriesList();
+  sel.innerHTML='<option value="">Toutes les échéances</option>'
+    +((state.credits||[]).length?'<optgroup label="Crédits">'+state.credits.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')+'</optgroup>':'')
+    +'<optgroup label="Mes échéanciers" data-v20="1">'+(series.length?'<option value="__due">Tous mes échéanciers</option>':'')+series.map(x=>`<option value="__s:${esc(x.key)}">${esc(x.label)}</option>`).join('')+(series.length?'':'<option value="__due" disabled>(aucun pour le moment)</option>')+'</optgroup>'
+    +'<optgroup label="Autres">'+'<option value="__other">Autres dettes datées (dettes, prêts reçus)</option></optgroup>';
+  sel.value=[...sel.options].some(o=>o.value===cur&&!o.disabled)?cur:'';
   W.__v20CalSel=sel.value;
   const rows=buildRows(sel.value,$('calendarStatus').value,$('calendarMonth').value);
   const out=rows.filter(r=>r.dir==='out'),inn=rows.filter(r=>r.dir==='in');
